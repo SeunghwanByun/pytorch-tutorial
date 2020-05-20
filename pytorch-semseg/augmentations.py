@@ -1,12 +1,6 @@
-import math
-import numbers
+import cv2
 import random
 import numpy as np
-import logging
-
-import torchvision.transforms.functional as tf
-
-from PIL import Image, ImageOps
 
 # Augmentation
 # Image
@@ -27,298 +21,146 @@ from PIL import Image, ImageOps
 # Random Gaussian Blur 50%, 5x5 Kernel sigma = 1, occlusion (50%, 16x16 Cutout)
 
 
-class Compose(object):
-    def __init__(self, augmentations):
-        self.augmentations = augmentations
-        self.PIL2Numpy = False
+def Rotation(img, lbl, degree):
+    new_degree = random.uniform(-degree, degree)
+    h, w = img.shape[:2]
+    M = cv2.getRotationMatrix2D((w/2, h/2), new_degree, 1)
+    img = cv2.warpAffine(img, M, (w, h))
+    lbl = cv2.warpAffine(lbl, M, (w, h))
 
-    def __call__(self, img, mask):
-        if isinstance(img, np.ndarray):
-            img = Image.fromarray(img, mode="RGB")
-            mask = Image.fromarray(mask, mode="L")
-            self.PIL2Numpy = True
+    return img, lbl
 
-        assert img.size == mask.size
-        for a in self.augmentations:
-            img, mask = a(img, mask)
-
-        if self.PIL2Numpy:
-            img, mask = np.array(img), np.array(mask, dtype=np.uint8)
-
-        return img, mask
+def Scale(img, lbl):
+    factor = random.uniform(0.9, 1.0)
+    h, w = img.shape[:2]
+    img = cv2.resize(img, ((int)(w * factor), (int)(h * factor)), interpolation=cv2.INTER_LINEAR)
+    lbl = cv2.resize(lbl, ((int)(w * factor), (int)(h * factor)), interpolation=cv2.INTER_LINEAR)
 
 
-class RandomCrop(object):
-    def __init__(self, size, padding=0):
-        if isinstance(size, numbers.Number):
-            self.size = (int(size), int(size))
-        else:
-            self.size = size
-        self.padding = padding
+    scaled_h, scaled_w = img.shape[:2]
+    if factor <= 1:
+        udp = (int)((h - scaled_h ) / 2)
+        lrp = (int)((w - scaled_w) / 2)
+        img = cv2.copyMakeBorder(img, udp, udp, lrp, lrp, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+    else:
+        img = img[(int)(scaled_w/2 - w/2):(int)(scaled_w/2 + w/2), (int)(scaled_h/2 - h/2):(int)(scaled_w/2 + w/2)]
+        lbl = lbl[(int)(scaled_w/2 - w/2):(int)(scaled_w/2 + w/2), (int)(scaled_h/2 - h/2):(int)(scaled_w/2 + w/2)]
 
-    def __call__(self, img, mask):
-        if self.padding > 0:
-            img = ImageOps.expand(img, border=self.padding, fill=0)
-            mask = ImageOps.expand(mask, border=self.padding, fill=0)
+    return img, lbl
 
-        assert img.size == mask.size
-        w, h = img.size
-        th, tw = self.size
-        if w == tw and h == th:
-            return img, mask
-        if w < tw or h < th:
-            return (img.resize((tw, th), Image.BILINEAR), mask.resize((tw, th), Image.NEAREST))
+def Translate(img, lbl, tx, ty):
+    new_tx = random.uniform(-tx, tx)
+    new_ty = random.uniform(-ty, ty)
 
-class AdjustGamma(object):
-    def __init__(self, gamma):
-        self.gamma = gamma
+    h, w = img.shape[:2]
 
-    def __call__(self, img, mask):
-        assert img.size == mask.size
-        return tf.adjust_gamma(img, random.uniform(1, 1 + self.gamma)), mask
+    M = np.float32([[1, 0, new_tx], [0, 1, new_ty]])
 
-class AdjustSaturation(object):
-    def __init__(self, saturation):
-        self.saturation = saturation
+    img = cv2.warpAffine(img, M, (w, h))
+    lbl = cv2.warpAffine(lbl, M, (w, h))
 
-    def __call__(self, img, mask):
-        assert img.size == mask.size
-        return (
-            tf.adjust_saturation(img, random.uniform(1 - self.saturation, 1 + self.saturation)),
-            mask
-        )
+    return img, lbl
 
-class AdjustHue(object):
-    def __init__(self, hue):
-        self.hue = hue
+def Flip(img, lbl, p):
+    if p < random.random():
+        img = cv2.flip(img, 1)
+        lbl = cv2.flip(lbl, 1)
+        return img, lbl
+    else:
+        return img, lbl
 
-    def __call__(self, img, mask):
-        assert img.size == mask.size
-        return tf.adjust_hue(img, random.uniform(-self.hue, self.hue)), mask
+def White_Noise(img):
+    h, w, c = img.shape
+    mean = 1
+    sigma = 0.1
+    gauss = np.random.normal(mean, sigma, (h, w, c))
+    gauss = gauss.reshape(h, w, c)
 
-class AdjustBrightness(object):
-    def __init__(self, bf):
-        self.bf = bf
+    noisy = img * gauss
+    noisy = np.clip(noisy, 0, 255.0)
+    noisy = noisy.astype('uint8')
 
-    def __call__(self, img, mask):
-        assert img.size == mask.size
-        return tf.adjust_brightness(img, random.uniform(1 - self.bf, 1 + self.bf)), mask
+    return noisy
 
-class AdjustContrast(object):
-    def __init__(self, cf):
-        self.cf = cf
+def Gray(img):
+    alpha = random.random()
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
-    def __call__(self, img, mask):
-        assert img.size == mask.size
-        return tf.adjust_contrast(img, random.uniform(1 - self.cf, 1 + self.cf)), mask
+    img = alpha * img + (1 - alpha) * gray
+    img = np.clip(img, 0, 255.0)
+    img = img.astype('uint8')
 
-class CenterCrop(object):
-    def __init__(self, size):
-        if isinstance(size, numbers.Number):
-            self.size = (int(size), int(size))
-        else:
-            self.size = size
+    return img
 
-    def __call__(self, img, mask):
-        assert img.size == mask.size
-        w, h = img.size
-        th, tw = self.size
-        x1 = int(round((w - tw) / 2.0))
-        y1 = int(round((h - th) / 2.0))
-        return (img.crop((x1, y1, x1 + tw, y1 + th)), mask.crop((x1, y1, x1 + tw, y1 + th)))
+def Brightness(img):
+    img = img.astype('float32')
+    random_brightness = random.randint(0, 32)
+    random_saturation = random.uniform(0.5, 1.5)
 
-class RandomHorizontallyFlip(object):
-    def __init__(self, p):
-        self.p = p
+    img = (img + random_brightness) * random_saturation
+    img = np.clip(img, 0, 255.0)
+    img = img.astype('uint8')
 
-    def __call__(self, img, mask):
-        if random.random() < self.p:
-            return (img.transpose(Image.FLIP_LEFT_RIGHT), mask.transpose(Image.FLIP_LEFT_RIGHT))
+    return img
 
-class RandomVerticallyFlip(object):
-    def __init__(self, p):
-        self.p = p
+def Contrast(img):
+    mean = np.mean(img)
+    random_contrast = random.uniform(0.5, 1.5)
 
-    def __call__(self, img, mask):
-        if random.random() < self.p:
-            return (img.transpose(Image.FLIP_TOP_BOTTOM), mask.transpose(Image.FLIP_TOP_BOTTOM))
+    img = (img - mean) * random_contrast + mean
+    img = np.clip(img, 0, 255.0)
+    img = img.astype('uint8')
 
+    return img
 
-class RandomTranslate(object):
-    def __init__(self, offset):
-        self.offset = offset
+def Color(img):
+    img = img.astype('float32')
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
-    def __call__(self, img, mask):
-        assert img.size == mask.size
-        x_offset = int(2 * (random.random() - 0.5) * self.offset[0])
-        y_offset = int(2 * (random.random() - 0.5) * self.offset[1])
+    img = (img - gray) * random.random() + img
+    img = np.clip(img, 0, 255.0)
+    img = img.astype('uint8')
 
-        x_crop_offset = x_offset
-        y_crop_offset = y_offset
-        if x_offset < 0:
-            x_crop_offset = 0
-        if y_offset < 0:
-            y_crop_offset = 0
+    return img
 
-        cropped_img = tf.crop(
-            img,
-            y_crop_offset,
-            x_crop_offset,
-            img.size[1] - abs(y_offset),
-            img.size[0] - abs(x_offset),
-        )
+def Equalization(img):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+    y_cbcr = cv2.split(img)
+    hist, bins = np.histogram(y_cbcr[0], 256, [0, 256])
 
-        if x_offset >= 0 and y_offset >= 0:
-            padding_tuple = (0, 0, x_offset, y_offset)
+    cdf = hist.cumsum()
 
-        elif x_offset >= 0 and y_offset < 0:
-            padding_tuple = (0, abs(y_offset), x_offset, 0)
+    cdf_m = np.ma.masked_equal(cdf, 0)
 
-        elif x_offset < 0 and y_offset >= 0:
-            padding_tuple = (abs(x_offset), 0, 0, y_offset)
+    cdf_m = (cdf_m - cdf_m.min()) * 255 / (cdf_m.max() - cdf_m.min())
 
-        elif x_offset < 0 and y_offset < 0:
-            padding_tuple = (abs(x_offset), abs(y_offset), 0, 0)
+    cdf = np.ma.filled(cdf_m, 0).astype('uint8')
+    y_cbcr[0] = cdf[y_cbcr[0]]
+    img = cv2.merge(y_cbcr)
+    img = cv2.cvtColor(img, cv2.COLOR_YCrCb2BGR)
+    img = np.clip(img, 0, 255.0)
 
-        return (
-            tf.pad(cropped_img, padding_tuple, padding_mode="reflect"),
-            tf.affine(
-                mask,
-                translate=(-x_offset, -y_offset),
-                scale=1.0,
-                angle=0.0,
-                shear=0.0,
-                fillcolor=250,
-            ),
-        )
+    img = img.astype('uint8')
 
-class RandomRotate(object):
-    def __init__(self, degree):
-        self.degree = degree
+    return img
 
-    def __call__(self, img, mask):
-        rotate_degree = random.random() * 2 * self.degree - self.degree
-        return (
-            tf.affine(
-                img,
-                translate=(0, 0),
-                scale=1.0,
-                angle=rotate_degree,
-                resample=Image.BILINEAR,
-                fillcolor=(0, 0, 0),
-                shear=0.0,
-            ),
-            tf.affine(
-                mask,
-                translate=(0, 0),
-                scale=1.0,
-                angle=rotate_degree,
-                resample=Image.NEAREST,
-                fillcolor=250,
-                shear=0.0,
-            ),
-        )
+def Shapness(img):
+    kernel_shapen = np.array([[1, 1, 1], [1, 5, 1], [1, 1, 1]]) / 5.0
+    k_img = cv2.filter2D(img, -1, kernel_shapen)
+    img = (img - k_img) * random.random() + img
+    img = np.clip(img, 0, 255.0)
 
+    img = img.astype('uint8')
 
-class Scale(object):
-    def __init__(self, size):
-        self.size = size
+    return img
 
-    def __call__(self, img, mask):
-        assert img.size == mask.size
-        w, h = img.size
-        if (w >= h and w == self.size) or (h >= w and h == self.size):
-            return img, mask
-        if w > h:
-            ow = self.size
-            oh = int(self.size * h / w)
-            return (img.resize((ow, oh), Image.BILINEAR), mask.resize((ow, oh), Image.NEAREST))
-        else:
-            oh = self.size
-            ow = int(self.size * w / h)
-            return (img.resize((ow, oh), Image.BILINEAR), mask.resize((ow, oh), Image.NEAREST))
+def Power_Law(img):
+    gamma = random.uniform(0.8, 1.2)
+    img = (img / 255.0) ** gamma * 255.0
+    img = np.clip(img, 0, 255.0)
 
+    img = img.astype('uint8')
 
-class RandomSizedCrop(object):
-    def __init__(self, size):
-        self.size = size
-
-    def __call__(self, img, mask):
-        assert img.size == mask.size
-        for attempt in range(10):
-            area = img.size[0] * img.size[1]
-            target_area = random.uniform(0.45, 1.0) * area
-            aspect_ratio = random.uniform(0.5, 2)
-
-            w = int(round(math.sqrt(target_area * aspect_ratio)))
-            h = int(round(math.sqrt(target_area / aspect_ratio)))
-
-            if random.random() < 0.5:
-                w, h = h, w
-
-            if w <= img.size[0] and h <= img.size[1]:
-                x1 = random.randint(0, img.size[0] - w)
-                y1 = random.randint(0, img.size[1] - h)
-
-                img = img.crop((x1, y1, x1 + w, y1 + h))
-                mask = mask.crop((x1, y1, x1 + w, y1 + h))
-                assert img.size == (w, h)
-
-                return (
-                    img.resize((self.size, self.size), Image.BILINEAR),
-                    mask.resize((self.size, self.size), Image.NEAREST),
-                )
-
-        # Fallback
-        scale = Scale(self.size)
-        crop = CenterCrop(self.size)
-        return crop(*scale(img, mask))
-
-
-class RandomSized(object):
-    def __init__(self, size):
-        self.size = size
-        self.scale = Scale(self.size)
-        self.crop = RandomCrop(self.size)
-
-    def __call__(self, img, mask):
-        assert img.size == mask.size
-
-        w = int(random.uniform(0.5, 2) * img.size[0])
-        h = int(random.uniform(0.5, 2) * img.size[1])
-
-        img, mask = (img.resize((w, h), Image.BILINEAR), mask.resize((w, h), Image.NEAREST))
-
-        return self.crop(*self.scale(img, mask))
-
-
-logger = logging.getLogger("Segmentation")
-
-key2aug = {
-    "gamma": AdjustGamma,
-    "hue": AdjustHue,
-    "brightness": AdjustBrightness,
-    "saturation": AdjustSaturation,
-    "contrast": AdjustContrast,
-    "rcrop": RandomCrop,
-    "hflip": RandomHorizontallyFlip,
-    "vflip": RandomVerticallyFlip,
-    "scale": Scale,
-    "rsize": RandomSized,
-    "rsizecrop": RandomSizedCrop,
-    "rotate": RandomRotate,
-    "translate": RandomTranslate,
-    "ccrop": CenterCrop,
-}
-
-def get_composed_augmentations(aug_dict):
-    if aug_dict is None:
-        logger.info("Using No Augmentations")
-        return None
-
-    augmentations = []
-    for aug_key, aug_param in aug_dict.items:
-        augmentations.append(key2aug[aug_key](aug_param))
-        logger.info("Using {} aug with params {}".format(aug_key, aug_param))
-
-    return Compose(augmentations)
+    return img
