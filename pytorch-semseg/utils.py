@@ -39,16 +39,6 @@ def acc_check(net, device, test_set, test_set_loader, image_size, epoch, save=1)
             labels = labels.to(device)
             outputs = net(images)
 
-            # _, predicted = torch.max(outputs.data, 1)
-            # _, predicted2 = torch.max(outputs.data, 0)
-
-            # total1 += labels.size()[2] * labels.size()[3]
-            # correct += (predicted == labels).sum().item()
-            # correct1 += (predicted1 > 0.8).sum().item()
-
-            # total2 += labels.size()[2] * labels.size()[3]
-            # correct2 += (predicted2 > 0.8).sum().item()
-
             name = test_set.image_dir[i].split("\\")[-1]
             output_softmax = outputs.cpu().numpy()[0].transpose(1, 2, 0)
             gt = labels.cpu().numpy()[0].transpose(1, 2, 0)
@@ -65,7 +55,7 @@ def acc_check(net, device, test_set, test_set_loader, image_size, epoch, save=1)
     acc = (100 * correct / total)
 
     print("Accuracy of the network on the %d test images: %d %% dimension" % (test_set.__len__(), acc))
-    # print("Accuracy of the network on the %d test images: %d %% - 2 dimension" % (test_set.__len__(), acc2))
+  
     if save:
         torch.save(net.state_dict(), "./model/model_epoch_{}_acc_{}.pth".format(epoch, int(acc)))
 
