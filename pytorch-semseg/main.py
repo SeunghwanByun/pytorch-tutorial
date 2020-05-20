@@ -131,16 +131,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-# ResNet18 = 2, 2, 2, 2 => Residual
-# ResNet34 = 3, 4, 6, 3 => Residual
-# ResNet50 = 3, 4, 6, 3 => BottleNeck
-# ResNet101 = 3, 4, 23, 3
-# ResNet152 = 3, 8, 36, 3
-
-# o = [i + 2*p - k - (k-1)*(d-1)]/s + 1
-
-# def poly_learning_rate(base_lr, curr_iter, max_iter, power=0.9):
-    #     """poly learning rate policy"""
-    #     lr = base_lr * (1 - float(curr_iter) / max_iter) ** power
-    #     return lr
