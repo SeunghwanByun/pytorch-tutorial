@@ -101,43 +101,10 @@ class Valid_DataSet(Dataset):
         lbl = cv2.imread(self.label_dir[item])
         lbl = np.array(lbl, dtype=np.uint8)
 
-        # Step 1
-        # Rotation -10~10
-        # img, lbl = Rotation(img, lbl, 5)
-        # # Scale 0.9~1.3
-        # img, lbl = Scale(img, lbl)
-        # # Translate -50~50
-        # img, lbl = Translate(img, lbl, 25, 25)
-        # # Flip
-        # img, lbl = Flip(img, lbl, 0.5)
-        #
-        # # Step2
-        # selection_num = random.randint(0, 7)
-        #
-        # if selection_num == 0:
-        #     img = White_Noise(img)
-        # elif selection_num == 1:
-        #     img = Gray(img)
-        # elif selection_num == 2:
-        #     img = Brightness(img)
-        # elif selection_num == 3:
-        #     img = Contrast(img)
-        # elif selection_num == 4:
-        #     img = Color(img)
-        # elif selection_num == 5:
-        #     img = Equalization(img)
-        # elif selection_num == 6:
-        #     img = Shapness(img)
-        # elif selection_num == 7:
-        #     img = Power_Law(img)
-
         img = cv2.resize(img, self.img_size)
         lbl = cv2.resize(lbl, self.img_size)
 
         lbl = process_gt_image(lbl)
-
-        # cv2.imshow("lbl", lbl)
-        # cv2.waitKey(0)
 
         # NHWC -> NCHW
         img = img.transpose(2, 0, 1)
