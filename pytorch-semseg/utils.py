@@ -19,13 +19,6 @@ def poly_learning_rate(base_lr, curr_iter, max_iter, power=0.9):
     lr = base_lr * (1 - float(curr_iter) / max_iter) ** power
     return lr
 
-def value_tracker(vis, num, value, value_plot):
-    ''' num, loss_value, are Tensor '''
-    vis.line(X=num,
-             Y=value,
-             win=value_plot,
-             update='append')
-
 def acc_check(net, device, test_set, test_set_loader, image_size, epoch, save=1):
     correct = 0
     total = 0
@@ -44,7 +37,7 @@ def acc_check(net, device, test_set, test_set_loader, image_size, epoch, save=1)
             gt = labels.cpu().numpy()[0].transpose(1, 2, 0)
 
             total += labels.size()[2] * labels.size()[3]
-            correct += np.all((output_softmax > 0.5) == gt, axis=2).sum()
+            correct += np.all((output_softmax > 0.8) == gt, axis=2).sum()
 
             output_img_train = np.squeeze(output_softmax)[:, :, 1].reshape(image_size[1], image_size[0])
             segmentation_r_train = (output_img_train > 0.8).reshape(image_size[1], image_size[0], 1)
@@ -55,7 +48,7 @@ def acc_check(net, device, test_set, test_set_loader, image_size, epoch, save=1)
     acc = (100 * correct / total)
 
     print("Accuracy of the network on the %d test images: %d %% dimension" % (test_set.__len__(), acc))
-  
+    
     if save:
         torch.save(net.state_dict(), "./model/model_epoch_{}_acc_{}.pth".format(epoch, int(acc)))
 
