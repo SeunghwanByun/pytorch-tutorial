@@ -7,14 +7,11 @@ from torch.utils.data import DataLoader
 
 from torchsummary import summary
 
-import visdom
+from torch.utils.tensorboard import SummaryWriter
 
 from loader import Train_DataSet, Valid_DataSet, Test_DataSet
 from PSPNet import PSPNet
 from utils import poly_learning_rate, value_tracker, acc_check
-
-vis = visdom.Visdom()
-vis.close(env="main")
 
 KITTI_IMAGE_SIZE = (576, 160)
 
@@ -44,21 +41,14 @@ def main():
 
     model = PSPNet().to(device)
 
-    criterion = nn.BCELoss().to(device)
-    # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=5e-4)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=0.0001)
-    # lr_sche = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
-
-
-
-    loss_plt = vis.line(Y=torch.Tensor(1).zero_(), opts=dict(title='loss_tracker', legend=['loss'], showlegend=True))
-    acc_plt = vis.line(Y=torch.Tensor(1).zero_(), opts=dict(title='Accuracy', legend=['Acc'], showlegend=True))
-
-    epochs = 150
-
-    for epoch in range(epochs):
+    
+    writer = SummaryWriter()
+    
+    epochs = 300
+    epoch = 0
+    while True:
         running_loss = 0.0
-        # lr_sche.step()
 
         for i, data in enumerate(dataset_loader, 0):
             max_iter = epochs * len(dataset_loader)
@@ -78,25 +68,34 @@ def main():
 
             # forward + backward + optimize
             output, main_loss, aux_loss = model(images, labels)
-            # loss = criterion(outputs, labels) + 0.4 * criterion(aux_loss, labels)
+            
             loss = main_loss + 0.4 * aux_loss
             loss.backward()
             optimizer.step()
 
             # print statistics
             running_loss += loss.item()
-            print("loss.item:", loss.item())
-            print("running_loss:", running_loss)
             if i % 10 == 9:
-                value_tracker(loss_plt, torch.Tensor([running_loss/10]), torch.Tensor([i + epoch * len(dataset_loader)]))
+                writer.add_scalar("Training Loss", running_loss / 10, epoch * len(dataset_loader) + i)
                 print("[%d, %5d] loss: %.3f" % (epoch + 1, i + 1, running_loss / 10))
 
                 running_loss = 0.0
+                
+            if i % 30 == 0:
+                grid = torchvision.utils.make_grid(output)
+                writer.add_image("Output Image", grid, 0)
 
         # Check Accuracy
-        acc1, acc2 = acc_check(model, dataset_valid, dataset_loader_valid, epoch, save=1)
-        value_tracker(acc_plt, torch.Tensor([acc1]), torch.Tensor([epoch]))
-        value_tracker(acc_plt, torch.Tensor([acc2]), torch.Tensor([epoch]))
+        acc = acc_check(model, dataset_valid, dataset_loader_valid, epoch, save=1)
+        writer.add_scalar("Training Accuracy", acc, epoch)
+        
+        epoch += 1
+        
+        if acc > 96 or epoch > epochs:
+            print("Finished Training..!")
+            break
+    
+    writer.close()
 
     model.eval()
 
@@ -109,19 +108,19 @@ def main():
             labels = labels.to(device)
             outputs = model(images)
 
-            name = dataset_test.image_dir[i]
+            name = dataset_test.image_dir[i].split("\\")[-1]
 
-            output_softmax = outputs.cpu().numpy()[0].transpose(1, 2, 0)
+            output_softmax = outputs.detach().cpu().numpy()[0].transpose(1, 2, 0)
+            gt = labels.detach().cpu().numpy()[0].transpose(1, 2, 0)
 
             output_img = np.squeeze(output_softmax)[:, :, 1].reshape(KITTI_IMAGE_SIZE[1], KITTI_IMAGE_SIZE[0])
-            segmentation_r = (output_img > 0.5).reshape(KITTI_IMAGE_SIZE[1], KITTI_IMAGE_SIZE[0], 1)
-            mask = np.dot(segmentation_r, np.array([[0, 255, 0, 127]]))
-            # print(mask.shape)
-            cv2.imwrite("data_road/output/{0}".format(name[28:]), mask)
+            segmentation_r = (output_img > 0.8).reshape(KITTI_IMAGE_SIZE[1], KITTI_IMAGE_SIZE[0], 1)
+            mask = np.dot(segmentation_r, np.array([[0, 255, 0]]))
+            
+            cv2.imwrite("data_road/output/{0}".format(name), mask)
 
-            _, predicted = torch.max(outputs.data, 1)
-
-            total += labels.size(0)
+            total += labels.size()[2] * labels.size()[3]
+            correct += np.all((output_softmax > 0.8) == gt, axis=2).sum()
 
             correct += (predicted == labels).sum().item()
 
