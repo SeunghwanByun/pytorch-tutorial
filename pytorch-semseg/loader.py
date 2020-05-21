@@ -10,12 +10,15 @@ from torch.utils.data import Dataset
 from augmentations import Rotation, Scale, Translate, Flip, White_Noise, Gray, Brightness, Contrast, Color, Equalization, Shapness, Power_Law
 
 def process_gt_image(gt_image):
-    background_color = np.array([0, 0, 255])
-    gt_bg = np.all(gt_image == background_color, axis=2)
-    gt_bg = gt_bg.reshape(gt_bg.shape[0], gt_bg.shape[1], 1)
+    road_color = np.array([255, 0, 255])
+    gt_rd = np.all(gt_image == road_color, axis=2)
+    gt_rd = gt_rd.reshape(gt_rd.shape[0], gt_rd.shape[1], 1)
 
-    gt_image = np.concatenate((gt_bg, np.invert(gt_bg)), axis=2)
-    # gt_image = np.invert(gt_bg)
+    gt_image = np.concatenate((np.invert(gt_rd), gt_rd), axis=2)
+
+    gt_bg_temp1 = (gt_image[:,:,0] * 255).astype('uint8')
+
+    gt_bg_temp2 = (gt_image[:,:,1] * 255).astype('uint8')
 
     return gt_image
 
@@ -68,9 +71,6 @@ class Train_DataSet(Dataset):
         lbl = cv2.resize(lbl, self.img_size)
 
         lbl = process_gt_image(lbl)
-
-        # cv2.imshow("lbl", lbl)
-        # cv2.waitKey(0)
 
         # NHWC -> NCHW
         img = img.transpose(2, 0, 1)
