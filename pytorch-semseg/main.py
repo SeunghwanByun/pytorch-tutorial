@@ -21,16 +21,9 @@ torch.manual_seed(1337)
 if device == 'cuda':
     torch.cuda.manual_seed_all(1377)
 
-def value_tracker(value_plot, value, num):
-    ''' num, loss_value, are Tensor '''
-    vis.line(X=num,
-             Y=value,
-             win=value_plot,
-             update='append')
-
 def main():
     dataset = Train_DataSet("data_road", "image", KITTI_IMAGE_SIZE)
-    dataset_loader = DataLoader(dataset, batch_size=2, drop_last=True, num_workers=0)
+    dataset_loader = DataLoader(dataset, batch_size=2, shuffle=True, drop_last=True, num_workers=0)
 
     dataset_valid = Valid_DataSet("data_road", "image", KITTI_IMAGE_SIZE)
     dataset_loader_valid = DataLoader(dataset_valid, batch_size=1, num_workers=0)
