@@ -42,6 +42,7 @@ def Scale(img, lbl):
         udp = (int)((h - scaled_h ) / 2)
         lrp = (int)((w - scaled_w) / 2)
         img = cv2.copyMakeBorder(img, udp, udp, lrp, lrp, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+        lbl = cv2.copyMakeBorder(lbl, udp, udp, lrp, lrp, cv2.BORDER_CONSTANT, value=[0, 0, 0])
     else:
         img = img[(int)(scaled_w/2 - w/2):(int)(scaled_w/2 + w/2), (int)(scaled_h/2 - h/2):(int)(scaled_w/2 + w/2)]
         lbl = lbl[(int)(scaled_w/2 - w/2):(int)(scaled_w/2 + w/2), (int)(scaled_h/2 - h/2):(int)(scaled_w/2 + w/2)]
